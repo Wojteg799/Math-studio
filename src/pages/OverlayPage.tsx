@@ -21,6 +21,7 @@ export const OverlayPage: React.FC = () => {
   } = useMathSocket();
 
   const [isEraser, setIsEraser] = useState(false);
+  const [eraserWidth, setEraserWidth] = useState(60);
   const [currentPressure, setCurrentPressure] = useState(0);
   const [showToolbar, setShowToolbar] = useState(false);
   const [fitToScreen, setFitToScreen] = useState(false);
@@ -171,6 +172,7 @@ export const OverlayPage: React.FC = () => {
             gridType={state.gridType}
             penColor={state.drawingColor}
             penWidth={state.drawingWidth}
+            eraserWidth={eraserWidth}
             isEraser={isEraser}
             strokes={state.strokes}
             onDrawStroke={sendStroke}
@@ -214,11 +216,13 @@ export const OverlayPage: React.FC = () => {
             <TabletToolbar
               penColor={state.drawingColor}
               penWidth={state.drawingWidth}
+              eraserWidth={eraserWidth}
               isEraser={isEraser}
               gridType={state.gridType}
               currentPressure={currentPressure}
               onSelectColor={setPenColor}
               onSelectWidth={setPenWidth}
+              onSelectEraserWidth={setEraserWidth}
               onToggleEraser={setIsEraser}
               onUndo={undoStroke}
               onClear={clearBoard}

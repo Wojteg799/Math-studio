@@ -21,6 +21,7 @@ export const PresenterPage: React.FC = () => {
   } = useMathSocket();
 
   const [isEraser, setIsEraser] = useState(false);
+  const [eraserWidth, setEraserWidth] = useState(60);
   const [currentPressure, setCurrentPressure] = useState(0);
   const [showTaskDrawer, setShowTaskDrawer] = useState(true);
 
@@ -144,6 +145,7 @@ export const PresenterPage: React.FC = () => {
               gridType={state.gridType}
               penColor={state.drawingColor}
               penWidth={state.drawingWidth}
+              eraserWidth={eraserWidth}
               isEraser={isEraser}
               strokes={state.strokes}
               onDrawStroke={sendStroke}
@@ -158,11 +160,13 @@ export const PresenterPage: React.FC = () => {
             <TabletToolbar
               penColor={state.drawingColor}
               penWidth={state.drawingWidth}
+              eraserWidth={eraserWidth}
               isEraser={isEraser}
               gridType={state.gridType}
               currentPressure={currentPressure}
               onSelectColor={setPenColor}
               onSelectWidth={setPenWidth}
+              onSelectEraserWidth={setEraserWidth}
               onToggleEraser={setIsEraser}
               onUndo={undoStroke}
               onClear={clearBoard}

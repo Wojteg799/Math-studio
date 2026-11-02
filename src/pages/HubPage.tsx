@@ -32,7 +32,7 @@ export const HubPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#060913] text-slate-100 flex flex-col justify-between p-6 select-none">
+    <div className="w-full h-screen overflow-y-auto bg-[#060913] text-slate-100 flex flex-col justify-between p-6 select-none">
       {/* Top Header */}
       <div className="max-w-5xl mx-auto w-full pt-6 pb-2 text-center space-y-3">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/25 text-cyan-300 text-xs font-semibold tracking-wide">
