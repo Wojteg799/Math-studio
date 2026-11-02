@@ -37,10 +37,18 @@ export const MathMatrixRain: React.FC<MathMatrixRainProps> = ({
     const charSwaps: number[] = Array.from({ length: columns }, () => 0);
 
     let animationId: number;
+    let lastFrameTime = 0;
 
-    const draw = () => {
+    const draw = (timestamp: number) => {
+      animationId = requestAnimationFrame(draw);
+
+      // Throttle background ambient rain to ~30 FPS to free GPU/CPU for whiteboard drawing
+      const elapsed = timestamp - lastFrameTime;
+      if (elapsed < 32) return;
+      lastFrameTime = timestamp - (elapsed % 32);
+
       // Semi-transparent fade trail
-      ctx.fillStyle = 'rgba(4, 10, 8, 0.08)';
+      ctx.fillStyle = 'rgba(4, 10, 8, 0.09)';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       ctx.font = `600 ${fontSize}px "JetBrains Mono", monospace`;
@@ -52,15 +60,15 @@ export const MathMatrixRain: React.FC<MathMatrixRainProps> = ({
         const y = drops[i] * fontSize;
 
         // Head of falling streak (intense neon green glow)
-        ctx.fillStyle = '#4ade80'; // Vivid neon Matrix green
+        ctx.fillStyle = '#4ade80';
         ctx.fillText(char, x, y);
 
         // Body of falling streak (classic rich emerald green)
-        ctx.fillStyle = '#22c55e'; // Green-500
+        ctx.fillStyle = '#22c55e';
         ctx.fillText(char, x, y - fontSize);
 
         // Tail of falling streak (deep green)
-        ctx.fillStyle = 'rgba(21, 128, 61, 0.55)'; // Deep forest matrix green
+        ctx.fillStyle = 'rgba(21, 128, 61, 0.55)';
         ctx.fillText(char, x, y - fontSize * 2);
 
         // Reset drop to top with slight randomization
@@ -68,13 +76,11 @@ export const MathMatrixRain: React.FC<MathMatrixRainProps> = ({
           drops[i] = 0;
         }
 
-        drops[i] += speeds[i];
+        drops[i] += speeds[i] * 1.5;
       }
-
-      animationId = requestAnimationFrame(draw);
     };
 
-    draw();
+    animationId = requestAnimationFrame(draw);
 
     return () => cancelAnimationFrame(animationId);
   }, [speedMultiplier]);

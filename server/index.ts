@@ -27,6 +27,7 @@ app.use(express.urlencoded({ limit: '25mb', extended: true }));
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   maxHttpBufferSize: 25 * 1024 * 1024, // 25 MB for high-resolution images
+  perMessageDeflate: false, // Ultra-low latency for 60fps stylus drawing
   cors: {
     origin: '*',
     methods: ['GET', 'POST']

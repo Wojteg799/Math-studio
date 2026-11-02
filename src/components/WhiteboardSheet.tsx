@@ -40,15 +40,22 @@ export const WhiteboardSheet: React.FC<WhiteboardSheetProps> = ({
     onStrokeUndone
   } = useMathSocket();
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Two-layer architecture for zero-lag 60fps drawing:
+  // Layer 1: mainCanvas holds all committed past strokes
+  const mainCanvasRef = useRef<HTMLCanvasElement>(null);
+  // Layer 2: liveCanvas holds ONLY the currently drawn stroke in real-time
+  const liveCanvasRef = useRef<HTMLCanvasElement>(null);
+
   const isDrawingRef = useRef(false);
   const currentStrokeIdRef = useRef<string>('');
   const currentPointsRef = useRef<DrawPoint[]>([]);
   const pendingChunkRef = useRef<DrawPoint[]>([]);
-  const lastChunkTimeRef = useRef<number>(0);
+  const rafBatchIdRef = useRef<number | null>(null);
 
-  // Buffer for incoming live remote strokes
-  const remoteActiveStrokes = useRef<{ [id: string]: { points: DrawPoint[]; color: string; baseWidth: number; isEraser?: boolean } }>({});
+  // Active remote stroke tracking for incoming OBS mirror
+  const remoteActiveStrokes = useRef<{
+    [id: string]: { points: DrawPoint[]; color: string; baseWidth: number; isEraser?: boolean };
+  }>({});
 
   const gridClass =
     gridType === 'dots'
@@ -57,9 +64,9 @@ export const WhiteboardSheet: React.FC<WhiteboardSheetProps> = ({
       ? 'bg-math-grid'
       : '';
 
-  // Redraw complete canvas from strokes list
-  const redrawCanvas = useCallback(() => {
-    const canvas = canvasRef.current;
+  // Redraw main canvas ONLY when strokes list changes (Initial load, Undo, Clear)
+  const redrawMainCanvas = useCallback(() => {
+    const canvas = mainCanvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -67,35 +74,40 @@ export const WhiteboardSheet: React.FC<WhiteboardSheetProps> = ({
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     strokes.forEach(stroke => {
-      drawFullStroke(ctx, stroke);
+      drawStrokeToContext(ctx, stroke);
     });
   }, [strokes]);
 
-  // Initial draw
+  // Initial draw and when undo/clear occurs
   useEffect(() => {
-    redrawCanvas();
-  }, [redrawCanvas]);
+    redrawMainCanvas();
+  }, [redrawMainCanvas]);
 
-  // Handle board clear and undo
   useEffect(() => {
     const unbindClear = onBoardCleared(() => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const main = mainCanvasRef.current;
+      const live = liveCanvasRef.current;
+      if (main) {
+        const ctx = main.getContext('2d');
+        if (ctx) ctx.clearRect(0, 0, main.width, main.height);
+      }
+      if (live) {
+        const ctx = live.getContext('2d');
+        if (ctx) ctx.clearRect(0, 0, live.width, live.height);
+      }
     });
 
     const unbindUndo = onStrokeUndone(() => {
-      redrawCanvas();
+      redrawMainCanvas();
     });
 
     return () => {
       unbindClear();
       unbindUndo();
     };
-  }, [onBoardCleared, onStrokeUndone, redrawCanvas]);
+  }, [onBoardCleared, onStrokeUndone, redrawMainCanvas]);
 
-  // Remote real-time drawing listeners for smooth 60fps mirroring in OBS
+  // Remote real-time drawing listeners for OBS
   useEffect(() => {
     const unbindStart = onRemoteStrokeStart((data: StrokeStartPayload) => {
       remoteActiveStrokes.current[data.id] = {
@@ -105,19 +117,21 @@ export const WhiteboardSheet: React.FC<WhiteboardSheetProps> = ({
         isEraser: data.isEraser
       };
 
-      const canvas = canvasRef.current;
+      const canvas = liveCanvasRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      // Draw initial dot
-      ctx.save();
+      // Draw initial point on live layer
       if (data.isEraser) {
+        ctx.save();
         ctx.globalCompositeOperation = 'destination-out';
         ctx.beginPath();
         ctx.arc(data.firstPoint.x, data.firstPoint.y, data.baseWidth / 2, 0, Math.PI * 2);
         ctx.fill();
+        ctx.restore();
       } else {
+        ctx.save();
         ctx.globalCompositeOperation = 'source-over';
         ctx.fillStyle = data.color;
         ctx.beginPath();
@@ -129,20 +143,20 @@ export const WhiteboardSheet: React.FC<WhiteboardSheetProps> = ({
           Math.PI * 2
         );
         ctx.fill();
+        ctx.restore();
       }
-      ctx.restore();
     });
 
     const unbindChunk = onRemoteStrokeChunk((chunk: StrokeChunk) => {
       const active = remoteActiveStrokes.current[chunk.id];
       if (!active) return;
 
-      const canvas = canvasRef.current;
+      const canvas = liveCanvasRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      // Append points and draw new curve segments in real time
+      // Draw segments incrementally in real-time
       for (const pt of chunk.points) {
         active.points.push(pt);
         const pts = active.points;
@@ -154,6 +168,24 @@ export const WhiteboardSheet: React.FC<WhiteboardSheetProps> = ({
 
     const unbindEnd = onRemoteStrokeEnd((finalStroke: Stroke) => {
       delete remoteActiveStrokes.current[finalStroke.id];
+
+      // Merge finished stroke directly into main canvas without clearing
+      const mainCanvas = mainCanvasRef.current;
+      const liveCanvas = liveCanvasRef.current;
+      if (mainCanvas && liveCanvas) {
+        const mainCtx = mainCanvas.getContext('2d');
+        const liveCtx = liveCanvas.getContext('2d');
+        if (mainCtx && liveCtx) {
+          if (finalStroke.isEraser) {
+            // Replay eraser stroke on main
+            drawStrokeToContext(mainCtx, finalStroke);
+          } else {
+            // Composite live layer to main
+            mainCtx.drawImage(liveCanvas, 0, 0);
+          }
+          liveCtx.clearRect(0, 0, liveCanvas.width, liveCanvas.height);
+        }
+      }
     });
 
     return () => {
@@ -163,7 +195,7 @@ export const WhiteboardSheet: React.FC<WhiteboardSheetProps> = ({
     };
   }, [onRemoteStrokeStart, onRemoteStrokeChunk, onRemoteStrokeEnd]);
 
-  // Helper: Draw smooth incremental Bezier curve segment
+  // Draw smooth Bezier curve segment
   const drawIncrementalSegment = (
     ctx: CanvasRenderingContext2D,
     pts: DrawPoint[],
@@ -172,7 +204,7 @@ export const WhiteboardSheet: React.FC<WhiteboardSheetProps> = ({
     isEraserActive?: boolean
   ) => {
     const pt = pts[pts.length - 1];
-    ctx.save();
+
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
@@ -186,6 +218,7 @@ export const WhiteboardSheet: React.FC<WhiteboardSheetProps> = ({
       ctx.lineWidth = baseWidth * (0.4 + (pt.pressure || 0.5) * 1.2);
     }
 
+    ctx.beginPath();
     if (pts.length > 2) {
       const pPrev = pts[pts.length - 3];
       const p0 = pts[pts.length - 2];
@@ -196,22 +229,17 @@ export const WhiteboardSheet: React.FC<WhiteboardSheetProps> = ({
       const midNextX = (p0.x + p1.x) / 2;
       const midNextY = (p0.y + p1.y) / 2;
 
-      ctx.beginPath();
       ctx.moveTo(midPrevX, midPrevY);
       ctx.quadraticCurveTo(p0.x, p0.y, midNextX, midNextY);
-      ctx.stroke();
     } else if (pts.length === 2) {
-      ctx.beginPath();
       ctx.moveTo(pts[0].x, pts[0].y);
       ctx.lineTo(pts[1].x, pts[1].y);
-      ctx.stroke();
     }
-
-    ctx.restore();
+    ctx.stroke();
   };
 
-  // Helper: Draw full stroke with Bezier smoothing (for initial loads / redraws)
-  const drawFullStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke) => {
+  // Full stroke rendering for historical replay
+  const drawStrokeToContext = (ctx: CanvasRenderingContext2D, stroke: Stroke) => {
     const pts = stroke.points;
     if (pts.length === 0) return;
 
@@ -265,7 +293,6 @@ export const WhiteboardSheet: React.FC<WhiteboardSheetProps> = ({
         ctx.moveTo(midX, midY);
         ctx.quadraticCurveTo(p0.x, p0.y, nextMidX, nextMidY);
       }
-
       ctx.stroke();
     }
 
@@ -273,7 +300,7 @@ export const WhiteboardSheet: React.FC<WhiteboardSheetProps> = ({
   };
 
   const getCanvasPoint = (e: React.PointerEvent<HTMLCanvasElement>): DrawPoint => {
-    const canvas = canvasRef.current;
+    const canvas = liveCanvasRef.current;
     if (!canvas) return { x: 0, y: 0, pressure: 0.5 };
 
     const rect = canvas.getBoundingClientRect();
@@ -291,6 +318,22 @@ export const WhiteboardSheet: React.FC<WhiteboardSheetProps> = ({
     return { x, y, pressure };
   };
 
+  // Dedicated RAF chunk dispatcher to synchronize smoothly with 60 FPS display rate
+  const scheduleChunkFlush = () => {
+    if (rafBatchIdRef.current !== null) return;
+
+    rafBatchIdRef.current = requestAnimationFrame(() => {
+      rafBatchIdRef.current = null;
+      if (pendingChunkRef.current.length > 0 && isDrawingRef.current) {
+        emitStrokeChunk({
+          id: currentStrokeIdRef.current,
+          points: [...pendingChunkRef.current]
+        });
+        pendingChunkRef.current = [];
+      }
+    });
+  };
+
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!interactive) return;
 
@@ -305,11 +348,10 @@ export const WhiteboardSheet: React.FC<WhiteboardSheetProps> = ({
     currentStrokeIdRef.current = strokeId;
     currentPointsRef.current = [pt];
     pendingChunkRef.current = [];
-    lastChunkTimeRef.current = performance.now();
 
     if (onPressureChange) onPressureChange(pt.pressure);
 
-    // 1. Send live start signal to OBS & other clients immediately
+    // Live stream start
     emitStrokeStart({
       id: strokeId,
       firstPoint: pt,
@@ -318,15 +360,14 @@ export const WhiteboardSheet: React.FC<WhiteboardSheetProps> = ({
       isEraser: isEraserActive
     });
 
-    // 2. Draw initial dot locally
-    const canvas = canvasRef.current;
+    // Draw initial dot on live canvas
+    const canvas = liveCanvasRef.current;
     if (canvas) {
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.save();
         if (isEraserActive) {
           ctx.globalCompositeOperation = 'destination-out';
-          ctx.fillStyle = 'rgba(0,0,0,1)';
           ctx.beginPath();
           ctx.arc(pt.x, pt.y, effectiveWidth / 2, 0, Math.PI * 2);
           ctx.fill();
@@ -347,36 +388,56 @@ export const WhiteboardSheet: React.FC<WhiteboardSheetProps> = ({
 
     const isEraserActive = isEraser || e.buttons === 32 || (e.pointerType === 'pen' && e.buttons === 2);
     const effectiveWidth = isEraserActive ? eraserWidth : penWidth;
-    const pt = getCanvasPoint(e);
-    const pts = currentPointsRef.current;
-    pts.push(pt);
-    pendingChunkRef.current.push(pt);
 
-    if (onPressureChange) onPressureChange(pt.pressure);
+    // Use Coalesced Events from hardware digitizer (Huion 266 RPS) for silky-smooth curves
+    // with native browser support
+    const nativeEvent = e.nativeEvent as PointerEvent;
+    const coalesced = typeof nativeEvent.getCoalescedEvents === 'function'
+      ? nativeEvent.getCoalescedEvents()
+      : null;
 
-    // Stream chunk in real time every ~16ms (60 FPS) or when buffer reaches 2 points
-    const now = performance.now();
-    if (now - lastChunkTimeRef.current >= 14 || pendingChunkRef.current.length >= 2) {
-      emitStrokeChunk({
-        id: currentStrokeIdRef.current,
-        points: [...pendingChunkRef.current]
-      });
-      pendingChunkRef.current = [];
-      lastChunkTimeRef.current = now;
-    }
-
-    // Draw locally with Bezier curve
-    const canvas = canvasRef.current;
+    const canvas = liveCanvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    drawIncrementalSegment(ctx, pts, effectiveWidth, penColor, isEraserActive);
+    if (coalesced && coalesced.length > 0) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+
+      for (const ce of coalesced) {
+        const cpt: DrawPoint = {
+          x: (ce.clientX - rect.left) * scaleX,
+          y: (ce.clientY - rect.top) * scaleY,
+          pressure: ce.pressure && ce.pressure > 0 ? ce.pressure : 0.5
+        };
+        currentPointsRef.current.push(cpt);
+        pendingChunkRef.current.push(cpt);
+        drawIncrementalSegment(ctx, currentPointsRef.current, effectiveWidth, penColor, isEraserActive);
+      }
+      if (onPressureChange && coalesced.length > 0) {
+        onPressureChange(coalesced[coalesced.length - 1].pressure || 0.5);
+      }
+    } else {
+      const pt = getCanvasPoint(e);
+      currentPointsRef.current.push(pt);
+      pendingChunkRef.current.push(pt);
+      if (onPressureChange) onPressureChange(pt.pressure);
+      drawIncrementalSegment(ctx, currentPointsRef.current, effectiveWidth, penColor, isEraserActive);
+    }
+
+    scheduleChunkFlush();
   };
 
   const finishDrawing = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!interactive || !isDrawingRef.current) return;
     isDrawingRef.current = false;
+
+    if (rafBatchIdRef.current !== null) {
+      cancelAnimationFrame(rafBatchIdRef.current);
+      rafBatchIdRef.current = null;
+    }
 
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
@@ -388,7 +449,7 @@ export const WhiteboardSheet: React.FC<WhiteboardSheetProps> = ({
     const isEraserActive = isEraser || e.buttons === 32 || (e.pointerType === 'pen' && e.buttons === 2);
     const effectiveWidth = isEraserActive ? eraserWidth : penWidth;
 
-    // Send any remaining points in chunk buffer
+    // Flush any pending points
     if (pendingChunkRef.current.length > 0) {
       emitStrokeChunk({
         id: currentStrokeIdRef.current,
@@ -397,7 +458,30 @@ export const WhiteboardSheet: React.FC<WhiteboardSheetProps> = ({
       pendingChunkRef.current = [];
     }
 
-    // Finalize stroke and save to persistent server history
+    // Merge live layer to main canvas
+    const mainCanvas = mainCanvasRef.current;
+    const liveCanvas = liveCanvasRef.current;
+    if (mainCanvas && liveCanvas) {
+      const mainCtx = mainCanvas.getContext('2d');
+      const liveCtx = liveCanvas.getContext('2d');
+      if (mainCtx && liveCtx) {
+        if (isEraserActive && pts.length > 0) {
+          const finalStroke: Stroke = {
+            id: currentStrokeIdRef.current,
+            points: [...pts],
+            color: penColor,
+            baseWidth: effectiveWidth,
+            isEraser: isEraserActive
+          };
+          drawStrokeToContext(mainCtx, finalStroke);
+        } else {
+          mainCtx.drawImage(liveCanvas, 0, 0);
+        }
+        liveCtx.clearRect(0, 0, liveCanvas.width, liveCanvas.height);
+      }
+    }
+
+    // Finalize stroke and emit to server
     if (pts.length > 0) {
       const finalStroke: Stroke = {
         id: currentStrokeIdRef.current,
@@ -421,11 +505,20 @@ export const WhiteboardSheet: React.FC<WhiteboardSheetProps> = ({
       }}
       className={`glass-sheet rounded-[20px] overflow-hidden relative shadow-studio-card border border-white/12 select-none touch-none ${gridClass} ${className}`}
     >
+      {/* Layer 1: Permanent Committed Strokes (Never redraws during drawing!) */}
       <canvas
-        ref={canvasRef}
+        ref={mainCanvasRef}
         width={width}
         height={height}
-        className={`w-full h-full block touch-none ${
+        className="w-full h-full block absolute inset-0 pointer-events-none"
+      />
+
+      {/* Layer 2: Live Active Stroke (Fast, ultra-smooth, zero friction) */}
+      <canvas
+        ref={liveCanvasRef}
+        width={width}
+        height={height}
+        className={`w-full h-full block absolute inset-0 touch-none ${
           isEraser ? 'cursor-cell' : 'cursor-crosshair'
         }`}
         onPointerDown={handlePointerDown}
