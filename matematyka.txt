@@ -1,0 +1,369 @@
+================================================================================
+  KOMPLEKSOWY PODRĘCZNIK ARCHITEKTURY DLA AI: SYSTEM NAKŁADEK OBS DO FILMÓW YT
+  PROJEKT: ELEGANCKIE STUDIO ROZWIĄZYWANIA ZADAŃ MATEMATYCZNYCH (TABLET HUION)
+================================================================================
+
+DLA SZTUCZNEJ INTELIGENCJI (AI PROMPTING CONTEXT):
+Jeśli jesteś modelem językowym (AI) w nowym oknie czatu i masz za zadanie stworzyć
+od zera ten projekt w osobnym folderze — ten dokument zawiera pełną architekturę,
+filozofię działania, stack technologiczny, wzorce kodowe, strukturę plików,
+konfigurację OBS Studio oraz szczegółowe rozwiązania techniczne dla obsługi
+tabletu graficznego Huion i estetyki kanału YouTube o matematyce.
+
+--------------------------------------------------------------------------------
+1. IDEA I FILOZOFIA ROZWIĄZANIA: DLACZEGO APLIKACJA WEBOWA W OBS?
+--------------------------------------------------------------------------------
+Tradycyjne tworzenie materiałów wideo w OBS polega na ręcznym dodawaniu dziesiątek
+niezależnych źródeł: obrazków PNG, napisów tekstowych GDI+, ramek, okien przechwytywania.
+Prowadzi to do chaosu, braku płynnych animacji, problemów ze skalowaniem i trudności
+w dynamicznym zmienianiu treści podczas nagrania.
+
+Nasze rozwiązanie opiera się na koncepcji "Broadcast Web Engine":
+1. Cały interfejs graficzny wideo to JEDNA strona internetowa renderowana
+   przez wbudowany w OBS silnik Chromium (OBS Browser Source) w 60 klatkach na sekundę.
+2. Strona ma tło w 100% przezroczyste w wyznaczonych strefach, co pozwala nałożyć
+   ją bezpośrednio na kadr z kamery fizycznej lub przechwytywanie pulpitu/okna.
+3. Wszystkie animacje (przejścia zadań, pływające cząsteczki tła, zegary, paski
+   postępu) są generowane za pomocą CSS3, HTML5 Canvas i Framer Motion.
+4. Całość kontrolowana jest w czasie rzeczywistym przez protokół WebSocket (Socket.io)
+   z poziomu osobnego panelu reżysera/prezentera (dostępnego na telefonie,
+   drugim monitorze lub bezpośrednio na tablecie graficznym).
+
+--------------------------------------------------------------------------------
+2. STOS TECHNOLOGICZNY (TECH STACK)
+--------------------------------------------------------------------------------
+- Środowisko uruchomieniowe: Node.js (v18+) + TypeScript
+- Silnik frontendu: React 19 + Vite (błyskawiczny bundler z Hot Module Replacement)
+- Stylizacja: Tailwind CSS (v4) + Vanilla CSS (glassmorphism, animacje keyframes)
+- Silnik animacji: Framer Motion (płynne interpolacje, sprężyste wejścia, wyjścia)
+- Biblioteka renderowania wzorów: KaTeX (błyskawiczne renderowanie czystego LaTeX-a)
+- Komunikacja na żywo: Express + Socket.io (dwukierunkowe przesyłanie stanu)
+- Ikony: Lucide React
+- Narzędzie nagrywania / streamingu: OBS Studio (OBS Browser Source 1920x1080)
+- Urządzenie wejściowe: Tablet piórkowy / graficzny Huion (obsługa Pointer Events / pressure)
+
+--------------------------------------------------------------------------------
+3. STRUKTURA KATALOGÓW PROJEKTU (FOLDER TREE)
+--------------------------------------------------------------------------------
+/twoj-projekt-matematyczny/
+│
+├── server/
+│   ├── index.ts               # Serwer Express + Socket.io (Single Source of Truth)
+│   └── mathTasks.ts           # Baza zadań (treść, LaTeX, wskazówki, trudność, kategoria)
+│
+├── src/
+│   ├── main.tsx               # Punkt wejścia React
+│   ├── index.css              # Style globalne, gradienty, fonty Google (np. Outfit, Inter)
+│   │
+│   ├── types/
+│   │   └── math.ts            # Typy TypeScript: TaskState, TabletStroke, OverlayState
+│   │
+│   ├── context/
+│   │   └── SocketContext.tsx  # Klient Socket.io, hook useMathSocket()
+│   │
+│   ├── pages/
+│   │   ├── OverlayPage.tsx    # WIDOK OBS (1920x1080): tło, arkusz, treść zadania, PiP kamery
+│   │   ├── PresenterPage.tsx  # WIDOK TABLETU: interaktywny arkusz do pisania rysikiem Huion
+│   │   └── DirectorPage.tsx   # PANEL KONTROLNY: zmiana zadań, odkrywanie wskazówek, timer
+│   │
+│   └── components/
+│       ├── StudioParticles.tsx# Tło: unoszący się pył / cząsteczki w Canvas 60 FPS
+│       ├── MathFormula.tsx    # Komponent KaTeX do renderowania równań
+│       ├── TaskLowerThird.tsx # Dolna belka z zadaniem (kategoria, treść, punkty)
+│       ├── WhiteboardSheet.tsx# Wirtualny arkusz w kratkę / kropki z obsługą rysika
+│       └── CameraFrame.tsx    # Stylowa ramka na kamerkę prowadzącego
+│
+├── package.json
+├── tsconfig.json
+├── vite.config.ts
+└── run_studio.bat             # Skrypt 1-klik do odpalenia serwera i aplikacji
+
+--------------------------------------------------------------------------------
+4. ARCHITEKTURA WIDOKU OBS (OVERLAYPAGE.TSX – 1920x1080)
+   MINIMALISTYCZNY UKŁAD: TYLKO 3 ELEMENTY, MAKSYMALNY ARKUSZ, MINIMALNE RAMKI
+--------------------------------------------------------------------------------
+Zgodnie z wymaganiami, na całym ekranie 1920x1080 znajdują się TYLKO 3 ELEMENTY.
+Żadnych zbędnych widgetów, pasków z punktami czy wielkich dekoracyjnych ramek.
+Wszystkie marginesy są zredukowane do minimum (16 px), aby główny arkusz do pisania
+zajął jak największą powierzchnię (ponad 75% ekranu!).
+
+GŁÓWNY REKOMENDOWANY UKŁAD (PIONOWY PANEL BOCZNY):
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 1920 x 1080 OBS CANVAS  (W tle: cyfrowy deszcz matematyczny Matrix)         │
+│                                                                             │
+│ ┌──────────────────────────────────────────────────────────┐ ┌────────────┐ │
+│ │ 1. GŁÓWNY ARKUSZ NA ROZWIĄZANIE                          │ │ 2. KAMERKA │ │
+│ │    (1400 x 1048 px) — AŻ 73% SZEROKOŚCI I 97% WYSOKOŚCI  │ │    TWARZ   │ │
+│ │                                                          │ │ (456x280px)│ │
+│ │  - Ogromna, czytelna przestrzeń na notatki rysikiem      │ └────────────┘ │
+│ │  - Tło: ciemny grafit + subtelna siatka dot-grid         │ ┌────────────┐ │
+│ │  - Ultra-cienki border (1px border-white/10)             │ │ 3. TREŚĆ   │ │
+│ │  - Płynne, kaligraficzne linie tabletu Huion             │ │    ZADANIA │ │
+│ │                                                          │ │ (456x752px)│ │
+│ │                                                          │ │  - Kategori│ │
+│ │                                                          │ │  - Treść   │ │
+│ │                                                          │ │  - Wzory   │ │
+│ │                                                          │ │    KaTeX   │ │
+│ └──────────────────────────────────────────────────────────┘ └────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+DOKŁADNE PARAMETRY POŁOŻENIA I ROZMIARÓW (PIXEL-PERFECT CSS):
+1. Element #1: GŁÓWNY ARKUSZ (Whiteboard)
+   - `left: 16px`, `top: 16px`, `width: 1400px`, `height: 1048px`
+   - Border: `1px solid rgba(255, 255, 255, 0.12)`, zaokrąglenie `border-radius: 20px`
+   - Tło: `rgba(9, 13, 24, 0.92)` z efektem `backdrop-blur: 16px`
+   - Wnętrze: natywny `<canvas>` o rozdzielczości 1400x1048 z obsługą nacisku Huion
+
+2. Element #2: OKNO KAMERKI TWARZY (Webcam Cutout)
+   - `left: 1432px`, `top: 16px`, `width: 472px`, `height: 290px`
+   - W 100% przezroczyste wycięcie (`background: transparent`), pod którym w OBS
+     znajduje się źródło wideo z kamerki.
+   - Minimalistyczna ramka: `border: 1px solid rgba(255, 255, 255, 0.15)`
+   - Cień studyjny: `box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6)`
+
+3. Element #3: KAFELEK TREŚCI ZADANIA (Task Statement Box)
+   - `left: 1432px`, `top: 322px`, `width: 472px`, `height: 742px`
+   - Umieszczony bezpośrednio pod kamerką, wypełnia całą pozostałą wysokość.
+   - Zawiera:
+     - Nagłówek: np. "ZADANIE 14 • 4 PKT" (neonowy akcent, np. cyan/złoto)
+     - Pełna treść zadania z ostrymi wektorowymi wzorami KaTeX/LaTeX
+     - Opcjonalne rozwijane wskazówki z animacją Framer Motion
+
+ALTERNATYWNY WARIANT B (ZADANIE WĄSKIM PASKIEM NA DOLE):
+Gdyby treść zadania była pozioma:
+- Arkusz: `1400 x 870 px` (góra lewo)
+- Kamerka: `472 x 870 px` lub `472 x 340 px` (góra prawo)
+- Zadanie na dole: `1888 x 162 px` (na dole pod spodem)
+
+--------------------------------------------------------------------------------
+5. JAK ZINTEGROWAĆ TABLET GRAFICZNY HUION? (2 SPRAWDZONE MODELE)
+--------------------------------------------------------------------------------
+
+MODEL A: NATYWNY WEBOWY CANVAS W APLIKACJI (ZALECANY, 100% ZINTEGROWANY)
+Tablet Huion działa jak mysz z obsługą siły nacisku w przeglądarce za pośrednictwem
+nowoczesnego W3C Pointer Events API:
+
+1. W przeglądarce tworzymy element `<canvas id="whiteboard">`.
+2. Nasłuchujemy zdarzeń: `onPointerDown`, `onPointerMove`, `onPointerUp`.
+3. Odczytujemy parametr `e.pressure` (zwraca wartość od 0.0 do 1.0 dla Huiona).
+4. Grubość linii skalujemy wzorem: `currentWidth = baseWidth * (0.4 + e.pressure * 1.2)`.
+5. Rysujemy linie za pomocą krzywych Beziera (`quadraticCurveTo`), co niweluje
+   kanciaste załamania ręki i daje efekt pięknego kaligraficznego pióra.
+6. Synchronizacja:
+   - Gdy prowadzisz lekcję na laptopie z podłączonym Huionem na stronie `PresenterPage.tsx`,
+     współrzędne kresek są wysyłane przez `socket.emit('DRAW_STROKE', strokeData)`
+     do serwera.
+   - Serwer rozsyła je do `OverlayPage.tsx` w OBS, gdzie natychmiast rysują się na wizji!
+   - Alternatywnie: `OverlayPage.tsx` sam w sobie może być otwarty na tablecie z ekranem
+     (np. Huion Kamvas) i bezpośrednio przechwytywany w OBS.
+
+MODEL B: OBS WINDOW CAPTURE CUTOUT (JEŚLI WOLICZ UŻYWAĆ ONENOTE / OPENBOARD)
+Jeśli wolisz pisać w dedykowanym programie (np. OneNote, Xournal++, OpenBoard):
+1. W kodzie `OverlayPage.tsx` zostawiasz w arkuszu idealnie przezroczyste okno:
+   `style={{ backgroundColor: 'transparent' }}`.
+2. W OBS dodajesz warstwy:
+   - WARSTWA GÓRNA: Browser Source (Twoja webowa nakładka z ramkami, zadaniem, zegarem).
+   - WARSTWA ŚRODKOWA: Window Capture (okno OneNote z wyciętym paskiem narzędzi).
+   - WARSTWA DOLNA: Kamera z prowadzącym.
+3. Webowa aplikacja zarządza tylko ramkami, animacjami, treścią zadania i tłem,
+   a środek wypełnia Twój program graficzny.
+
+--------------------------------------------------------------------------------
+6. IMPLEMENTACJA SILNIKA RENDEROWANIA MATEMATYKI (KATEX)
+--------------------------------------------------------------------------------
+Zadania matematyczne na YouTube muszą wyglądać perfekcyjnie (nie dopuszcza się
+rozmytych zrzutów ekranu ze starych arkuszy CKE).
+
+Instalacja:
+  npm install katex
+  npm install -D @types/katex
+
+Przykładowy komponent `MathFormula.tsx`:
+```tsx
+import React, { useEffect, useRef } from 'react';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
+
+interface MathFormulaProps {
+  math: string;
+  block?: boolean;
+  className?: string;
+}
+
+export const MathFormula: React.FC<MathFormulaProps> = ({ math, block = false, className = '' }) => {
+  const containerRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (containerRef.current) {
+      katex.render(math, containerRef.current, {
+        displayMode: block,
+        throwOnError: false,
+      });
+    }
+  }, [math, block]);
+
+  return <span ref={containerRef} className={className} />;
+};
+```
+Użycie w treści zadania:
+`<MathFormula math="f(x) = \lim_{x \to \infty} \frac{2x^2 - 1}{x^2 + 5} = 2" block={true} />`
+
+--------------------------------------------------------------------------------
+7. SILNIK TŁA: MATEMATYCZNY DESZCZ W STYLU MATRIXA (60 FPS CANVAS)
+--------------------------------------------------------------------------------
+W tle pod arkuszem i kamerką renderujemy hipnotyzujący, cyfrowy deszcz symboli
+matematycznych w stylu Matrixa (HTML5 Canvas w 60 FPS).
+Dzięki odpowiedniemu dobraniu przezroczystości (opacity 0.15 - 0.25) efekt wygląda
+filmowo, nie odwracając uwagi od rozwiązywanego zadania.
+
+Przykładowy gotowy komponent `MathMatrixRain.tsx`:
+```tsx
+import React, { useEffect, useRef } from 'react';
+
+const MATH_SYMBOLS = [
+  '∫', '∑', '√', 'π', '∞', '∂', 'θ', 'λ', 'α', 'β', 'Δ', '∇',
+  '≈', '≠', '≤', '≥', 'lim', 'dx', 'dt', 'x²', 'e^x', 'f(x)',
+  '∈', 'ℝ', 'ℤ', 'ℕ', 'sin', 'cos', 'tan', 'log', 'ln', 'Ω', '±'
+];
+
+export const MathMatrixRain: React.FC = () => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    canvas.width = 1920;
+    canvas.height = 1080;
+
+    const fontSize = 18;
+    const columns = Math.floor(canvas.width / fontSize);
+    // Pozycja Y dla każdej kolumny
+    const drops: number[] = Array.from({ length: columns }, () => Math.random() * -100);
+    // Prędkości spadania (zróżnicowane dla efektu głębi 3D)
+    const speeds: number[] = Array.from({ length: columns }, () => Math.random() * 0.8 + 0.6);
+
+    let animationId: number;
+
+    const draw = () => {
+      // Półprzezroczyste czyszczenie tła - tworzy charakterystyczny ogon (fade trail)
+      ctx.fillStyle = 'rgba(6, 9, 18, 0.12)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.font = `${fontSize}px monospace`;
+
+      for (let i = 0; i < drops.length; i++) {
+        // Losowy symbol matematyczny
+        const char = MATH_SYMBOLS[Math.floor(Math.random() * MATH_SYMBOLS.length)];
+        const x = i * fontSize;
+        const y = drops[i] * fontSize;
+
+        // Głowa spadającego ciągu (jaśniejsza, neonowa)
+        ctx.fillStyle = 'rgba(167, 243, 208, 0.75)'; // jasny szmaragd / seledyn
+        ctx.fillText(char, x, y);
+
+        // Ogon (ciemniejszy, subtelny)
+        ctx.fillStyle = 'rgba(16, 185, 129, 0.35)'; // szmaragd Matrixa
+        ctx.fillText(char, x, y - fontSize);
+
+        // Reset kropli na górę po przekroczeniu dołu ekranu
+        if (y > canvas.height && Math.random() > 0.975) {
+          drops[i] = 0;
+        }
+
+        drops[i] += speeds[i];
+      }
+
+      animationId = requestAnimationFrame(draw);
+    };
+
+    draw();
+
+    return () => cancelAnimationFrame(animationId);
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="absolute inset-0 pointer-events-none z-0"
+      style={{ opacity: 0.35 }}
+    />
+  );
+};
+```
+
+--------------------------------------------------------------------------------
+8. SERWER I PROTOKÓŁ WEBSOCKET (SOCKET.IO)
+--------------------------------------------------------------------------------
+W pliku `server/index.ts` stan aplikacji to obiekt:
+```ts
+interface MathStudioState {
+  currentTaskIndex: number;
+  totalTasks: number;
+  revealedHints: number[]; // indeksy odkrytych podpowiedzi
+  timerSeconds: number;
+  isTimerRunning: boolean;
+  taskTitle: string;
+  taskCategory: string;
+  taskPoints: number;
+  taskStatementLatex: string;
+  drawingColor: string;
+  activeBanner: { message: string; type: 'info' | 'gold' | 'success' } | null;
+}
+```
+Zdarzenia wysyłane przez Reżysera / Klawisze skrótów:
+- `TASK_NEXT` / `TASK_PREV` – natychmiast zmienia treść zadania z animacją w OBS.
+- `TASK_REVEAL_HINT` – wysuwa kolejny krok rozwiązania / wzór pomocniczy.
+- `TIMER_TOGGLE` / `TIMER_RESET` – steruje stoperem liczącym czas na zadanie.
+- `CLEAR_BOARD` – czyści arkusz pisania rysikiem.
+- `CHANGE_PEN_COLOR` – przełącza kolor pisaka (Biały, Neon Cyan, Złoty, Różowy).
+
+--------------------------------------------------------------------------------
+9. SKRÓT KLAWISZOWY I OBSŁUGA PRZYCISKÓW TABLETU HUION
+--------------------------------------------------------------------------------
+Tablety Huion posiadają fizyczne przyciski funkcyjne (ExpressKeys) na obudowie
+oraz 2 przyciski na samym piórku.
+Można je w oprogramowaniu Huion Tablet Driver zmapować na klawisze:
+- Klawisz [E]: Gumka / Czyszczenie (wywołuje akcję `CLEAR_BOARD`)
+- Klawisz [Z] z Ctrl: Cofnij kreskę (`UNDO`)
+- Klawisz [1]: Zmiana koloru na biały
+- Klawisz [2]: Zmiana koloru na neonowy żółty (wyróżnienia założeń matematycznych)
+- Klawisz [3]: Zmiana koloru na błękitny cyan (wynik końcowy)
+- Klawisz [N]: Następne zadanie (`TASK_NEXT`)
+
+--------------------------------------------------------------------------------
+10. KONFIGURACJA W OBS STUDIO (KROK PO KROKU)
+--------------------------------------------------------------------------------
+1. Uruchom aplikację komendą `npm run dev` (uruchamia backend na :3001 i Vite na :3000).
+2. W OBS Studio utwórz Scenę "Lekcja Matematyki".
+3. Dodaj źródło typu "Browser" (Przeglądarka):
+   - URL: `http://localhost:3000/overlay` (lub odpowiednia ścieżka nakładki)
+   - Szerokość (Width): 1920
+   - Wysokość (Height): 1080
+   - FPS: 60
+   - Zaznacz: "Shutdown source when not visible" (opcjonalnie)
+   - Zaznacz: "Refresh browser when scene becomes active"
+   - CSS niestandardowy: `body { background-color: rgba(0, 0, 0, 0); margin: 0px auto; overflow: hidden; }`
+4. Dodaj źródło kamery prowadzącego i ustaw je w warstwach pod nakładką lub dopasuj
+   do okienka kamery wyznaczonego na nakładce.
+5. Na drugim ekranie / telefonie otwórz `http://localhost:3000/director`, skąd możesz
+   w trakcie nagrania zmieniać zadania bez przerywania mówienia!
+
+--------------------------------------------------------------------------------
+11. WSKAZÓWKI DLA AI GENERUJĄCEJ KOD NOWEGO PROJEKTU
+--------------------------------------------------------------------------------
+Gdy będziesz pisać kod:
+1. Pamiętaj o dyrektywie `@tailwindcss/vite` lub czystym CSS dla zachowania
+   efektów szklanych kafelków:
+   `.glass-sheet { background: rgba(10, 15, 30, 0.85); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.12); }`
+2. Zadbaj o to, by font do liczb był stałoszerokościowy (`tabular-nums`),
+   co zapobiega skakaniu szerokości timera podczas odliczania.
+3. Dla wzorów KaTeX zawsze dołączaj arkusz stylów `import 'katex/dist/katex.min.css';`.
+4. Stwórz skrypt `.bat` na wzór `start_studio.bat`, który uruchamia `npm run dev`
+   i natychmiast otwiera panel reżysera w domyślnej przeglądarce.
+
+================================================================================
+KONIEC DOKUMENTACJI — GOTOWE DO PRZEKAZANIA DO NOWEGO MODELU AI
+================================================================================
