@@ -15,7 +15,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     return (
       <div
         style={{ width: 472, height: 742 }}
-        className={`glass-panel rounded-2xl border border-white/12 shadow-studio-card ${className}`}
+        className={`task-card-panel rounded-2xl ${className}`}
       />
     );
   }
@@ -26,20 +26,20 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         width: 472,
         height: 742
       }}
-      className={`glass-panel rounded-2xl flex flex-col overflow-hidden shadow-studio-card border border-white/12 relative ${className}`}
+      className={`task-card-panel rounded-2xl flex flex-col overflow-hidden relative shadow-2xl ${className}`}
     >
       {/* If task has an uploaded image (screenshot from exam sheet / textbook) */}
       {task.imageUrl ? (
-        <div className="w-full h-full p-4 flex items-center justify-center overflow-auto">
+        <div className="w-full h-full p-4 flex items-center justify-center overflow-y-auto">
           <img
             src={task.imageUrl}
             alt="Treść zadania"
-            className="max-w-full max-h-full object-contain rounded-xl shadow-lg block select-none pointer-events-none"
+            className="w-full max-h-full object-contain rounded-xl shadow-lg block select-none pointer-events-none task-image-crisp"
           />
         </div>
       ) : (
-        /* Pure text / LaTeX statement */
-        <div className="flex-1 overflow-y-auto p-6 text-slate-100 text-[16px] leading-relaxed select-text font-normal">
+        /* Pure text / LaTeX statement with crystal-clear 1080p broadcast typography */
+        <div className="flex-1 overflow-y-auto p-7 task-text-crisp select-text">
           <MathFormula math={task.statementLatex || ''} block={true} />
         </div>
       )}
