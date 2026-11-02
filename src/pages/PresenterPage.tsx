@@ -86,11 +86,10 @@ export const PresenterPage: React.FC = () => {
           <div>
             <h1 className="text-sm font-bold tracking-wide flex items-center gap-2">
               <span>ARKUSZ PREZENTERA (HUION TABLET)</span>
-              <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
-                isConnected
-                  ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                  : 'bg-rose-500/15 text-rose-400 border-rose-500/30'
-              }`}>
+              <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${isConnected
+                ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                : 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+                }`}>
                 <Radio className={`w-3 h-3 ${isConnected ? 'animate-pulse' : ''}`} />
                 <span>{isConnected ? 'LIVE SYNC OBS' : 'ROZŁĄCZONO'}</span>
               </span>
@@ -122,11 +121,10 @@ export const PresenterPage: React.FC = () => {
 
           <button
             onClick={() => setShowTaskDrawer(prev => !prev)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
-              showTaskDrawer
-                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
-                : 'bg-white/5 text-slate-400 hover:text-white border-white/10'
-            }`}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${showTaskDrawer
+              ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+              : 'bg-white/5 text-slate-400 hover:text-white border-white/10'
+              }`}
           >
             {showTaskDrawer ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
             <span>{showTaskDrawer ? 'Zwiń Treść' : 'Pokaż Treść'}</span>
