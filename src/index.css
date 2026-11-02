@@ -9,7 +9,7 @@
 
   html, body, #root {
     background-color: transparent !important;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
     margin: 0;
     padding: 0;
     user-select: none;
@@ -37,38 +37,55 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-/* Razor-sharp card panel for task statement - NO backdrop-blur to ensure crystal-clear DirectWrite font rendering */
+/* Razor-sharp card panel for task statement - NO backdrop-filter blurriness */
 .task-card-panel {
-  background: #090e1d;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7);
+  background: #090e1f;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 14px 45px rgba(0, 0, 0, 0.75);
 }
 
-/* Crystal-clear 1080p broadcast typography */
+/* Crystal-clear 1080p modern sans-serif typography (Inter Latin-Ext) */
 .task-text-crisp {
-  font-size: 20px;
-  line-height: 1.65;
-  color: #ffffff;
-  font-weight: 500;
-  text-rendering: geometricPrecision;
-  -webkit-font-smoothing: antialiased;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
-}
-
-/* Sharp KaTeX equations */
-.task-text-crisp .katex {
-  font-size: 1.28em !important;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  font-size: 23px !important;
+  line-height: 1.65 !important;
   color: #ffffff !important;
-  text-rendering: geometricPrecision;
+  font-weight: 600 !important;
+  letter-spacing: -0.015em;
+  text-rendering: geometricPrecision !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
 }
 
-/* Thicken hairline fraction bars and radicals so video compression never blurs them */
+/* Sharp KaTeX equations with high-contrast accent variables */
+.task-text-crisp .katex {
+  font-size: 1.2em !important;
+  color: #ffffff !important;
+  text-rendering: geometricPrecision !important;
+  white-space: nowrap;
+}
+
+/* Math variables (like x, h, L, V_max) highlighted in glowing cyan for instant readability */
+.task-text-crisp .katex .mathnormal {
+  color: #38bdf8 !important;
+  font-weight: 700 !important;
+  text-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
+}
+
+/* Operators like =, <, > tinted in cool slate so cyan variables pop */
+.task-text-crisp .katex .mrel {
+  color: #94a3b8 !important;
+}
+
+/* Thick fraction lines and square roots that never blur on YouTube compression */
 .task-text-crisp .katex .frac-line {
-  border-bottom-width: 2px !important;
+  border-bottom-width: 2.2px !important;
+  border-color: #38bdf8 !important;
 }
 
 .task-text-crisp .katex svg path {
-  stroke-width: 1.6 !important;
+  stroke-width: 2px !important;
 }
 
 /* Sharp image rendering for uploaded task screenshots */

@@ -234,9 +234,12 @@ export const HubPage: React.FC = () => {
           </div>
 
           <div className="bg-black/30 p-3 rounded-xl border border-white/5 space-y-1">
-            <div className="font-bold text-cyan-300">2. Rozmiar i FPS</div>
+            <div className="font-bold text-cyan-300">2. Rozmiar i FPS (Klucz do ostrości!)</div>
             <p className="text-slate-400">
-              Szerokość: <strong>1920</strong>, Wysokość: <strong>1080</strong>, FPS: <strong>60</strong>.
+              Szerokość: <strong className="text-white">1920</strong>, Wysokość: <strong className="text-white">1080</strong>, FPS: <strong className="text-white">60</strong>.
+            </p>
+            <p className="text-[11px] text-amber-300/90 leading-tight">
+              ⚠️ Nigdy nie zostawiaj 800x600 – inaczej OBS rozciągnie obraz i tekst będzie zamglony! Po wpisaniu 1920x1080 kliknij na źródło w podglądzie: <em>Prawy &rarr; Transformuj &rarr; Dopasuj do ekranu (Ctrl+F)</em>.
             </p>
           </div>
 

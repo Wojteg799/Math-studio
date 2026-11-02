@@ -15,15 +15,15 @@ export const MathFormula: React.FC<MathFormulaProps> = ({ math, block = false, c
     if (!containerRef.current) return;
 
     try {
-      // If the string contains \( ... \) or \[ ... \] or is a mixed string
       const trimmed = math.trim();
       const hasDelimiters = trimmed.includes('\\(') || trimmed.includes('\\[') || trimmed.includes('$');
+      const hasWords = /[a-zA-ZąćęłńóśźżĄĆĘŁŃÓŚŹŻ]{4,}/.test(trimmed);
 
-      if (hasDelimiters) {
-        // Render mixed text with embedded TeX equations
+      // If it contains TeX delimiters OR normal words, render as mixed text so it uses crisp Inter font
+      if (hasDelimiters || hasWords) {
         containerRef.current.innerHTML = renderMixedLatex(trimmed);
       } else {
-        // Pure LaTeX expression
+        // Pure LaTeX formula without text
         katex.render(trimmed, containerRef.current, {
           displayMode: block,
           throwOnError: false,
@@ -42,7 +42,8 @@ export const MathFormula: React.FC<MathFormulaProps> = ({ math, block = false, c
 };
 
 /**
- * Parses a string containing LaTeX delimiters \( ... \), \[ ... \], and standard text.
+ * Parses a string containing LaTeX delimiters and standard text.
+ * Renders prose in ultra-sharp modern sans-serif (Inter) and formulas with KaTeX.
  */
 function renderMixedLatex(text: string): string {
   // Replace \[ ... \] block formulas
@@ -81,12 +82,11 @@ function renderMixedLatex(text: string): string {
     }
   });
 
-  // Convert newlines to breaks where appropriate
+  // Convert newlines to breaks
   processed = processed.replace(/\n\n/g, '<br/><br/>').replace(/\n/g, '<br/>');
 
   // Convert bold markdown **text**
-  processed = processed.replace(/\*\*([^*]+)\*\*/g, '<strong class="text-amber-300 font-semibold">$1</strong>');
+  processed = processed.replace(/\*\*([^*]+)\*\*/g, '<strong class="text-amber-300 font-bold">$1</strong>');
 
   return processed;
 }
-
