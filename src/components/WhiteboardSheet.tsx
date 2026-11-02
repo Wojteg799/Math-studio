@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useCallback } from 'react';
-import { Stroke, DrawPoint } from '../types/math';
+import { Stroke, DrawPoint, StrokeStartPayload, StrokeChunk } from '../types/math';
+import { useMathSocket } from '../context/SocketContext';
 
 interface WhiteboardSheetProps {
   width?: number;
@@ -10,7 +11,6 @@ interface WhiteboardSheetProps {
   eraserWidth?: number;
   isEraser?: boolean;
   strokes?: Stroke[];
-  onDrawStroke?: (stroke: Stroke) => void;
   onPressureChange?: (pressure: number) => void;
   interactive?: boolean;
   className?: string;
@@ -25,16 +25,31 @@ export const WhiteboardSheet: React.FC<WhiteboardSheetProps> = ({
   eraserWidth = 60,
   isEraser = false,
   strokes = [],
-  onDrawStroke,
   onPressureChange,
   interactive = true,
   className = ''
 }) => {
+  const {
+    emitStrokeStart,
+    emitStrokeChunk,
+    emitStrokeEnd,
+    onRemoteStrokeStart,
+    onRemoteStrokeChunk,
+    onRemoteStrokeEnd,
+    onBoardCleared,
+    onStrokeUndone
+  } = useMathSocket();
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const isDrawingRef = useRef(false);
+  const currentStrokeIdRef = useRef<string>('');
   const currentPointsRef = useRef<DrawPoint[]>([]);
+  const pendingChunkRef = useRef<DrawPoint[]>([]);
+  const lastChunkTimeRef = useRef<number>(0);
 
-  // Background styling
+  // Buffer for incoming live remote strokes
+  const remoteActiveStrokes = useRef<{ [id: string]: { points: DrawPoint[]; color: string; baseWidth: number; isEraser?: boolean } }>({});
+
   const gridClass =
     gridType === 'dots'
       ? 'bg-dot-grid'
@@ -42,7 +57,7 @@ export const WhiteboardSheet: React.FC<WhiteboardSheetProps> = ({
       ? 'bg-math-grid'
       : '';
 
-  // Redraw full stroke list onto canvas
+  // Redraw complete canvas from strokes list
   const redrawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -52,16 +67,151 @@ export const WhiteboardSheet: React.FC<WhiteboardSheetProps> = ({
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     strokes.forEach(stroke => {
-      drawSingleStroke(ctx, stroke);
+      drawFullStroke(ctx, stroke);
     });
   }, [strokes]);
 
+  // Initial draw
   useEffect(() => {
     redrawCanvas();
   }, [redrawCanvas]);
 
-  // Function to draw a complete stroke with smoothing
-  const drawSingleStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke) => {
+  // Handle board clear and undo
+  useEffect(() => {
+    const unbindClear = onBoardCleared(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    });
+
+    const unbindUndo = onStrokeUndone(() => {
+      redrawCanvas();
+    });
+
+    return () => {
+      unbindClear();
+      unbindUndo();
+    };
+  }, [onBoardCleared, onStrokeUndone, redrawCanvas]);
+
+  // Remote real-time drawing listeners for smooth 60fps mirroring in OBS
+  useEffect(() => {
+    const unbindStart = onRemoteStrokeStart((data: StrokeStartPayload) => {
+      remoteActiveStrokes.current[data.id] = {
+        points: [data.firstPoint],
+        color: data.color,
+        baseWidth: data.baseWidth,
+        isEraser: data.isEraser
+      };
+
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      // Draw initial dot
+      ctx.save();
+      if (data.isEraser) {
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.beginPath();
+        ctx.arc(data.firstPoint.x, data.firstPoint.y, data.baseWidth / 2, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.fillStyle = data.color;
+        ctx.beginPath();
+        ctx.arc(
+          data.firstPoint.x,
+          data.firstPoint.y,
+          Math.max(1, (data.baseWidth * (0.4 + (data.firstPoint.pressure || 0.5) * 1.2)) / 2),
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
+      }
+      ctx.restore();
+    });
+
+    const unbindChunk = onRemoteStrokeChunk((chunk: StrokeChunk) => {
+      const active = remoteActiveStrokes.current[chunk.id];
+      if (!active) return;
+
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      // Append points and draw new curve segments in real time
+      for (const pt of chunk.points) {
+        active.points.push(pt);
+        const pts = active.points;
+        if (pts.length >= 2) {
+          drawIncrementalSegment(ctx, pts, active.baseWidth, active.color, active.isEraser);
+        }
+      }
+    });
+
+    const unbindEnd = onRemoteStrokeEnd((finalStroke: Stroke) => {
+      delete remoteActiveStrokes.current[finalStroke.id];
+    });
+
+    return () => {
+      unbindStart();
+      unbindChunk();
+      unbindEnd();
+    };
+  }, [onRemoteStrokeStart, onRemoteStrokeChunk, onRemoteStrokeEnd]);
+
+  // Helper: Draw smooth incremental Bezier curve segment
+  const drawIncrementalSegment = (
+    ctx: CanvasRenderingContext2D,
+    pts: DrawPoint[],
+    baseWidth: number,
+    color: string,
+    isEraserActive?: boolean
+  ) => {
+    const pt = pts[pts.length - 1];
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    if (isEraserActive) {
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.strokeStyle = 'rgba(0,0,0,1)';
+      ctx.lineWidth = baseWidth;
+    } else {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = color;
+      ctx.lineWidth = baseWidth * (0.4 + (pt.pressure || 0.5) * 1.2);
+    }
+
+    if (pts.length > 2) {
+      const pPrev = pts[pts.length - 3];
+      const p0 = pts[pts.length - 2];
+      const p1 = pts[pts.length - 1];
+
+      const midPrevX = (pPrev.x + p0.x) / 2;
+      const midPrevY = (pPrev.y + p0.y) / 2;
+      const midNextX = (p0.x + p1.x) / 2;
+      const midNextY = (p0.y + p1.y) / 2;
+
+      ctx.beginPath();
+      ctx.moveTo(midPrevX, midPrevY);
+      ctx.quadraticCurveTo(p0.x, p0.y, midNextX, midNextY);
+      ctx.stroke();
+    } else if (pts.length === 2) {
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      ctx.lineTo(pts[1].x, pts[1].y);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  };
+
+  // Helper: Draw full stroke with Bezier smoothing (for initial loads / redraws)
+  const drawFullStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke) => {
     const pts = stroke.points;
     if (pts.length === 0) return;
 
@@ -151,10 +301,24 @@ export const WhiteboardSheet: React.FC<WhiteboardSheetProps> = ({
     isDrawingRef.current = true;
 
     const pt = getCanvasPoint(e);
+    const strokeId = `stroke-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+    currentStrokeIdRef.current = strokeId;
     currentPointsRef.current = [pt];
+    pendingChunkRef.current = [];
+    lastChunkTimeRef.current = performance.now();
 
     if (onPressureChange) onPressureChange(pt.pressure);
 
+    // 1. Send live start signal to OBS & other clients immediately
+    emitStrokeStart({
+      id: strokeId,
+      firstPoint: pt,
+      color: penColor,
+      baseWidth: effectiveWidth,
+      isEraser: isEraserActive
+    });
+
+    // 2. Draw initial dot locally
     const canvas = canvasRef.current;
     if (canvas) {
       const ctx = canvas.getContext('2d');
@@ -186,50 +350,28 @@ export const WhiteboardSheet: React.FC<WhiteboardSheetProps> = ({
     const pt = getCanvasPoint(e);
     const pts = currentPointsRef.current;
     pts.push(pt);
+    pendingChunkRef.current.push(pt);
 
     if (onPressureChange) onPressureChange(pt.pressure);
 
+    // Stream chunk in real time every ~16ms (60 FPS) or when buffer reaches 2 points
+    const now = performance.now();
+    if (now - lastChunkTimeRef.current >= 14 || pendingChunkRef.current.length >= 2) {
+      emitStrokeChunk({
+        id: currentStrokeIdRef.current,
+        points: [...pendingChunkRef.current]
+      });
+      pendingChunkRef.current = [];
+      lastChunkTimeRef.current = now;
+    }
+
+    // Draw locally with Bezier curve
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    ctx.save();
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    if (isEraserActive) {
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.strokeStyle = 'rgba(0,0,0,1)';
-      ctx.lineWidth = effectiveWidth;
-    } else {
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.strokeStyle = penColor;
-      ctx.lineWidth = penWidth * (0.4 + pt.pressure * 1.2);
-    }
-
-    if (pts.length > 2) {
-      const pPrev = pts[pts.length - 3];
-      const p0 = pts[pts.length - 2];
-      const p1 = pts[pts.length - 1];
-
-      const midPrevX = (pPrev.x + p0.x) / 2;
-      const midPrevY = (pPrev.y + p0.y) / 2;
-      const midNextX = (p0.x + p1.x) / 2;
-      const midNextY = (p0.y + p1.y) / 2;
-
-      ctx.beginPath();
-      ctx.moveTo(midPrevX, midPrevY);
-      ctx.quadraticCurveTo(p0.x, p0.y, midNextX, midNextY);
-      ctx.stroke();
-    } else if (pts.length === 2) {
-      ctx.beginPath();
-      ctx.moveTo(pts[0].x, pts[0].y);
-      ctx.lineTo(pts[1].x, pts[1].y);
-      ctx.stroke();
-    }
-
-    ctx.restore();
+    drawIncrementalSegment(ctx, pts, effectiveWidth, penColor, isEraserActive);
   };
 
   const finishDrawing = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -239,21 +381,32 @@ export const WhiteboardSheet: React.FC<WhiteboardSheetProps> = ({
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {
-      // Ignore if not captured
+      // Ignore
     }
 
     const pts = currentPointsRef.current;
-    if (pts.length > 0 && onDrawStroke) {
-      const isEraserActive = isEraser || e.buttons === 32 || (e.pointerType === 'pen' && e.buttons === 2);
-      const effectiveWidth = isEraserActive ? eraserWidth : penWidth;
-      const newStroke: Stroke = {
-        id: `stroke-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+    const isEraserActive = isEraser || e.buttons === 32 || (e.pointerType === 'pen' && e.buttons === 2);
+    const effectiveWidth = isEraserActive ? eraserWidth : penWidth;
+
+    // Send any remaining points in chunk buffer
+    if (pendingChunkRef.current.length > 0) {
+      emitStrokeChunk({
+        id: currentStrokeIdRef.current,
+        points: [...pendingChunkRef.current]
+      });
+      pendingChunkRef.current = [];
+    }
+
+    // Finalize stroke and save to persistent server history
+    if (pts.length > 0) {
+      const finalStroke: Stroke = {
+        id: currentStrokeIdRef.current,
         points: [...pts],
         color: penColor,
         baseWidth: effectiveWidth,
         isEraser: isEraserActive
       };
-      onDrawStroke(newStroke);
+      emitStrokeEnd(finalStroke);
     }
 
     currentPointsRef.current = [];

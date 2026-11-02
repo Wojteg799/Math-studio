@@ -12,12 +12,25 @@ export interface Stroke {
   isEraser?: boolean;
 }
 
+export interface StrokeStartPayload {
+  id: string;
+  firstPoint: DrawPoint;
+  color: string;
+  baseWidth: number;
+  isEraser?: boolean;
+}
+
+export interface StrokeChunk {
+  id: string;
+  points: DrawPoint[];
+}
+
 export interface TaskItem {
   id: string;
   number?: string;
   title?: string;
   statementLatex?: string;
-  imageUrl?: string | null; // Base64 data URL or image link
+  imageUrl?: string | null;
 }
 
 export interface StudioBanner {

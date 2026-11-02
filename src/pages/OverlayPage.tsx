@@ -175,7 +175,6 @@ export const OverlayPage: React.FC = () => {
             eraserWidth={eraserWidth}
             isEraser={isEraser}
             strokes={state.strokes}
-            onDrawStroke={sendStroke}
             onPressureChange={setCurrentPressure}
             interactive={true}
           />

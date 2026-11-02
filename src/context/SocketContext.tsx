@@ -1,11 +1,14 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { MathStudioState, Stroke, TaskItem, StudioBanner } from '../types/math';
+import { MathStudioState, Stroke, TaskItem, StudioBanner, StrokeStartPayload, StrokeChunk } from '../types/math';
 
 interface SocketContextType {
   state: MathStudioState;
   isConnected: boolean;
   sendStroke: (stroke: Stroke) => void;
+  emitStrokeStart: (data: StrokeStartPayload) => void;
+  emitStrokeChunk: (data: StrokeChunk) => void;
+  emitStrokeEnd: (finalStroke: Stroke) => void;
   clearBoard: () => void;
   undoStroke: () => void;
   nextTask: () => void;
@@ -20,6 +23,9 @@ interface SocketContextType {
   addTask: (task: TaskItem) => void;
   deleteTask: (index: number) => void;
   onStrokeAdded: (callback: (stroke: Stroke) => void) => () => void;
+  onRemoteStrokeStart: (callback: (data: StrokeStartPayload) => void) => () => void;
+  onRemoteStrokeChunk: (callback: (data: StrokeChunk) => void) => () => void;
+  onRemoteStrokeEnd: (callback: (finalStroke: Stroke) => void) => () => void;
   onBoardCleared: (callback: () => void) => () => void;
   onStrokeUndone: (callback: () => void) => () => void;
 }
@@ -42,6 +48,9 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const socketRef = useRef<Socket | null>(null);
 
   const strokeAddedCallbacks = useRef<Set<(stroke: Stroke) => void>>(new Set());
+  const remoteStartCallbacks = useRef<Set<(data: StrokeStartPayload) => void>>(new Set());
+  const remoteChunkCallbacks = useRef<Set<(data: StrokeChunk) => void>>(new Set());
+  const remoteEndCallbacks = useRef<Set<(finalStroke: Stroke) => void>>(new Set());
   const boardClearedCallbacks = useRef<Set<() => void>>(new Set());
   const strokeUndoneCallbacks = useRef<Set<() => void>>(new Set());
 
@@ -51,8 +60,8 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       : `${window.location.protocol}//${window.location.hostname}:3001`;
 
     const socket = io(serverUrl, {
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000,
+      reconnectionAttempts: 15,
+      reconnectionDelay: 800,
       transports: ['websocket', 'polling']
     });
 
@@ -72,6 +81,23 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     socket.on('STATE_UPDATE', (partialState: Partial<MathStudioState>) => {
       setState(prev => ({ ...prev, ...partialState }));
+    });
+
+    // Real-time remote drawing events
+    socket.on('REMOTE_STROKE_START', (data: StrokeStartPayload) => {
+      remoteStartCallbacks.current.forEach(cb => cb(data));
+    });
+
+    socket.on('REMOTE_STROKE_CHUNK', (data: StrokeChunk) => {
+      remoteChunkCallbacks.current.forEach(cb => cb(data));
+    });
+
+    socket.on('REMOTE_STROKE_END', (finalStroke: Stroke) => {
+      setState(prev => ({
+        ...prev,
+        strokes: [...prev.strokes, finalStroke]
+      }));
+      remoteEndCallbacks.current.forEach(cb => cb(finalStroke));
     });
 
     socket.on('STROKE_ADDED', (stroke: Stroke) => {
@@ -106,6 +132,22 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       strokes: [...prev.strokes, stroke]
     }));
     socketRef.current?.emit('DRAW_STROKE', stroke);
+  }, []);
+
+  const emitStrokeStart = useCallback((data: StrokeStartPayload) => {
+    socketRef.current?.emit('STROKE_START', data);
+  }, []);
+
+  const emitStrokeChunk = useCallback((data: StrokeChunk) => {
+    socketRef.current?.emit('STROKE_CHUNK', data);
+  }, []);
+
+  const emitStrokeEnd = useCallback((finalStroke: Stroke) => {
+    setState(prev => ({
+      ...prev,
+      strokes: [...prev.strokes, finalStroke]
+    }));
+    socketRef.current?.emit('STROKE_END', finalStroke);
   }, []);
 
   const clearBoard = useCallback(() => {
@@ -172,6 +214,27 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
   }, []);
 
+  const onRemoteStrokeStart = useCallback((callback: (data: StrokeStartPayload) => void) => {
+    remoteStartCallbacks.current.add(callback);
+    return () => {
+      remoteStartCallbacks.current.delete(callback);
+    };
+  }, []);
+
+  const onRemoteStrokeChunk = useCallback((callback: (data: StrokeChunk) => void) => {
+    remoteChunkCallbacks.current.add(callback);
+    return () => {
+      remoteChunkCallbacks.current.delete(callback);
+    };
+  }, []);
+
+  const onRemoteStrokeEnd = useCallback((callback: (finalStroke: Stroke) => void) => {
+    remoteEndCallbacks.current.add(callback);
+    return () => {
+      remoteEndCallbacks.current.delete(callback);
+    };
+  }, []);
+
   const onBoardCleared = useCallback((callback: () => void) => {
     boardClearedCallbacks.current.add(callback);
     return () => {
@@ -192,6 +255,9 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         state,
         isConnected,
         sendStroke,
+        emitStrokeStart,
+        emitStrokeChunk,
+        emitStrokeEnd,
         clearBoard,
         undoStroke,
         nextTask,
@@ -206,6 +272,9 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         addTask,
         deleteTask,
         onStrokeAdded,
+        onRemoteStrokeStart,
+        onRemoteStrokeChunk,
+        onRemoteStrokeEnd,
         onBoardCleared,
         onStrokeUndone
       }}

@@ -146,7 +146,6 @@ export const PresenterPage: React.FC = () => {
               eraserWidth={eraserWidth}
               isEraser={isEraser}
               strokes={state.strokes}
-              onDrawStroke={sendStroke}
               onPressureChange={setCurrentPressure}
               interactive={true}
               className="max-w-full max-h-[calc(100vh-140px)] aspect-[1400/1048] object-contain"

@@ -4,7 +4,7 @@ import { Server, Socket } from 'socket.io';
 import cors from 'cors';
 import os from 'os';
 import { INITIAL_MATH_TASKS } from './mathTasks.js';
-import { MathStudioState, Stroke, TaskItem, StudioBanner } from '../src/types/math.js';
+import { MathStudioState, Stroke, TaskItem, StudioBanner, StrokeStartPayload, StrokeChunk } from '../src/types/math.js';
 
 function getLocalIpAddresses(): string[] {
   const interfaces = os.networkInterfaces();
@@ -63,7 +63,20 @@ io.on('connection', (socket: Socket) => {
   // Send current state to newly connected client
   socket.emit('INITIAL_STATE', state);
 
-  // Drawing strokes synchronization
+  // Real-time live stroke streaming
+  socket.on('STROKE_START', (data: StrokeStartPayload) => {
+    socket.broadcast.emit('REMOTE_STROKE_START', data);
+  });
+
+  socket.on('STROKE_CHUNK', (data: StrokeChunk) => {
+    socket.broadcast.emit('REMOTE_STROKE_CHUNK', data);
+  });
+
+  socket.on('STROKE_END', (finalStroke: Stroke) => {
+    state.strokes.push(finalStroke);
+    socket.broadcast.emit('REMOTE_STROKE_END', finalStroke);
+  });
+
   socket.on('DRAW_STROKE', (stroke: Stroke) => {
     state.strokes.push(stroke);
     socket.broadcast.emit('STROKE_ADDED', stroke);
